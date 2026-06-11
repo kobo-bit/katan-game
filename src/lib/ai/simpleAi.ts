@@ -30,7 +30,7 @@ import {
   type Vertex,
 } from "@/lib/game/types";
 
-const PIP_WEIGHT: Record<number, number> = {
+export const PIP_WEIGHT: Record<number, number> = {
   2: 1,
   3: 2,
   4: 3,
@@ -43,7 +43,7 @@ const PIP_WEIGHT: Record<number, number> = {
   12: 1,
 };
 
-function pipScore(state: GameState, vertex: Vertex): number {
+export function pipScore(state: GameState, vertex: Vertex): number {
   let score = 0;
   const resources = new Set<Resource>();
   for (const hexId of vertex.hexIds) {
@@ -59,24 +59,25 @@ function pipScore(state: GameState, vertex: Vertex): number {
   return score;
 }
 
-function pickRandom<T>(items: T[]): T | null {
+export function pickRandom<T>(items: T[]): T | null {
   if (items.length === 0) return null;
   return items[Math.floor(Math.random() * items.length)];
 }
 
-function topByScore<T>(items: T[], score: (item: T) => number, take: number): T[] {
+export function topByScore<T>(items: T[], score: (item: T) => number, take: number): T[] {
   return [...items].sort((a, b) => score(b) - score(a)).slice(0, take);
 }
 
 // === 初期配置 ===
 
-function chooseSetupSettlement(state: GameState, playerId: PlayerId): string {
+export function chooseSetupSettlement(state: GameState, playerId: PlayerId, scoreVertex?: (state: GameState, v: Vertex) => number): string {
+  const score = scoreVertex ?? pipScore;
   const candidates = state.board.vertices.filter((v) => canPlaceSettlement(state, playerId, v.id, true));
-  const best = topByScore(candidates, (v) => pipScore(state, v), 3);
+  const best = topByScore(candidates, (v) => score(state, v), 3);
   return (pickRandom(best) ?? candidates[0]).id;
 }
 
-function chooseSetupRoad(state: GameState, playerId: PlayerId, anchorVertexId: string): string {
+export function chooseSetupRoad(state: GameState, playerId: PlayerId, anchorVertexId: string): string {
   const anchor = getVertex(state, anchorVertexId);
   const candidates = anchor.edgeIds.filter((edgeId) =>
     canPlaceRoad(state, playerId, edgeId, { isSetup: true, setupAnchorVertexId: anchorVertexId })
@@ -95,7 +96,7 @@ function chooseSetupRoad(state: GameState, playerId: PlayerId, anchorVertexId: s
 
 // === 捨て札 ===
 
-function chooseDiscard(player: Player): Partial<ResourceCount> {
+export function chooseDiscard(player: Player): Partial<ResourceCount> {
   const total = resourceTotal(player);
   const required = Math.floor(total / 2);
   const discard: Partial<ResourceCount> = {};
@@ -119,7 +120,7 @@ function chooseDiscard(player: Player): Partial<ResourceCount> {
 
 // === 盗賊 ===
 
-function chooseRobberTarget(state: GameState, playerId: PlayerId): { hexId: string; targetPlayerId: PlayerId | null } {
+export function chooseRobberTarget(state: GameState, playerId: PlayerId): { hexId: string; targetPlayerId: PlayerId | null } {
   const me = getPlayer(state, playerId);
   const myVertexIds = new Set(
     state.board.vertices.filter((v) => v.building?.owner === playerId).map((v) => v.id)
@@ -165,12 +166,12 @@ function chooseRobberTarget(state: GameState, playerId: PlayerId): { hexId: stri
 
 // === メインフェイズの行動選択 ===
 
-interface BuildPlan {
+export interface BuildPlan {
   action: GameAction;
   priority: number;
 }
 
-function findCityPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
+export function findCityPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
   const player = getPlayer(state, playerId);
   if (player.citiesLeft <= 0 || !hasResources(player, BUILDING_COST.city)) return null;
   const vertex = state.board.vertices.find((v) => canUpgradeToCity(state, playerId, v.id));
@@ -178,7 +179,7 @@ function findCityPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
   return { action: { type: "BUILD_CITY", playerId, vertexId: vertex.id }, priority: 100 };
 }
 
-function findSettlementPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
+export function findSettlementPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
   const player = getPlayer(state, playerId);
   if (player.settlementsLeft <= 0 || !hasResources(player, BUILDING_COST.settlement)) return null;
   const candidates = state.board.vertices.filter((v) => canPlaceSettlement(state, playerId, v.id, false));
@@ -187,7 +188,7 @@ function findSettlementPlan(state: GameState, playerId: PlayerId): BuildPlan | n
   return { action: { type: "BUILD_SETTLEMENT", playerId, vertexId: best.id }, priority: 90 };
 }
 
-function findRoadPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
+export function findRoadPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
   const player = getPlayer(state, playerId);
   if (player.roadsLeft <= 0) return null;
   if (state.freeRoadsRemaining <= 0 && !hasResources(player, BUILDING_COST.road)) return null;
@@ -212,17 +213,21 @@ function findRoadPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
   return { action: { type: "BUILD_ROAD", playerId, edgeId: choice.id }, priority: free ? 95 : 40 };
 }
 
-function findDevCardPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
+export function findDevCardPlan(state: GameState, playerId: PlayerId): BuildPlan | null {
   const player = getPlayer(state, playerId);
   if (state.bankDevCards.length === 0 || !hasResources(player, BUILDING_COST.devCard)) return null;
   return { action: { type: "BUY_DEV_CARD", playerId }, priority: 30 };
 }
 
-function findBankTradePlan(state: GameState, playerId: PlayerId): GameAction | null {
+export function findBankTradePlan(
+  state: GameState,
+  playerId: PlayerId,
+  tradeGoals?: Partial<ResourceCount>[]
+): GameAction | null {
   const player = getPlayer(state, playerId);
 
-  // 目標: 開拓地 or 都市が建てられるように、不足している資源を交換で確保する
-  const goals: Partial<ResourceCount>[] = [BUILDING_COST.settlement, BUILDING_COST.city, BUILDING_COST.road];
+  // 目標: 指定があればそれを、なければ開拓地・都市・街道の資源不足を補う
+  const goals: Partial<ResourceCount>[] = tradeGoals ?? [BUILDING_COST.settlement, BUILDING_COST.city, BUILDING_COST.road];
   for (const goal of goals) {
     const missing = (Object.entries(goal) as [Resource, number][]).filter(
       ([resource, amount]) => player.resources[resource] < amount
@@ -250,7 +255,7 @@ function findBankTradePlan(state: GameState, playerId: PlayerId): GameAction | n
 }
 
 // 騎士カードを使うべきか判定 (盗賊が自陣にある, あるいは最大騎士力を狙える場合)
-function shouldPlayKnight(state: GameState, playerId: PlayerId): boolean {
+export function shouldPlayKnight(state: GameState, playerId: PlayerId): boolean {
   const player = getPlayer(state, playerId);
   const totalKnights = player.devCards.filter((c) => c === "knight").length;
   const newKnights = player.newDevCards.filter((c) => c === "knight").length;
@@ -268,7 +273,7 @@ function shouldPlayKnight(state: GameState, playerId: PlayerId): boolean {
   return false;
 }
 
-function playableDevCardTypes(player: Player): DevCardType[] {
+export function playableDevCardTypes(player: Player): DevCardType[] {
   const types: DevCardType[] = [];
   for (const type of ["knight", "roadBuilding", "yearOfPlenty", "monopoly"] as DevCardType[]) {
     const total = player.devCards.filter((c) => c === type).length;
@@ -278,7 +283,7 @@ function playableDevCardTypes(player: Player): DevCardType[] {
   return types;
 }
 
-function findMonopolyTarget(state: GameState, playerId: PlayerId): Resource | null {
+export function findMonopolyTarget(state: GameState, playerId: PlayerId): Resource | null {
   const me = getPlayer(state, playerId);
   let bestResource: Resource | null = null;
   let bestTotal = 0;
@@ -297,7 +302,7 @@ function findMonopolyTarget(state: GameState, playerId: PlayerId): Resource | nu
   return bestTotal >= 3 ? bestResource : null;
 }
 
-function findYearOfPlentyTarget(state: GameState, playerId: PlayerId): [Resource, Resource] | null {
+export function findYearOfPlentyTarget(state: GameState, playerId: PlayerId): [Resource, Resource] | null {
   const player = getPlayer(state, playerId);
   const goals: Partial<ResourceCount>[] = [BUILDING_COST.city, BUILDING_COST.settlement];
   for (const goal of goals) {

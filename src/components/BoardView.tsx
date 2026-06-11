@@ -137,19 +137,19 @@ export default function BoardView({
         );
       })}
 
-      {/* 港 */}
-      {board.vertices
-        .filter((v) => v.port)
-        .map((v) => (
-          <g key={`port-${v.id}`}>
-            <circle cx={v.x} cy={v.y} r={5} fill="#1d2b36" stroke="#fff" strokeWidth={1} />
-          </g>
-        ))}
-      {uniquePortLabels(board).map(({ x, y, port, id }) => (
-        <g key={`port-label-${id}`}>
-          <rect x={x - 22} y={y - 10} width={44} height={16} rx={4} fill="#1d2b36" opacity={0.85} />
-          <text x={x} y={y + 2} textAnchor="middle" fontSize={9} fill="#fff">
+      {/* 港: 港マークと、その港を使える2つの頂点を結ぶ「桟橋」のラインを描き、範囲を視覚化する */}
+      {uniquePortLabels(board).map(({ x, y, port, id, dock }) => (
+        <g key={`port-${id}`}>
+          <line x1={x} y1={y} x2={dock[0].x} y2={dock[0].y} stroke="#1d2b36" strokeWidth={2} strokeDasharray="3 3" opacity={0.7} />
+          <line x1={x} y1={y} x2={dock[1].x} y2={dock[1].y} stroke="#1d2b36" strokeWidth={2} strokeDasharray="3 3" opacity={0.7} />
+          <circle cx={dock[0].x} cy={dock[0].y} r={7} fill="none" stroke="#1d2b36" strokeWidth={2} opacity={0.8} />
+          <circle cx={dock[1].x} cy={dock[1].y} r={7} fill="none" stroke="#1d2b36" strokeWidth={2} opacity={0.8} />
+          <rect x={x - 26} y={y - 16} width={52} height={32} rx={6} fill="#fef3c7" stroke="#1d2b36" strokeWidth={1.5} />
+          <text x={x} y={y - 3} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#1d2b36">
             {PORT_LABEL[port]}
+          </text>
+          <text x={x} y={y + 9} textAnchor="middle" fontSize={7} fill="#475569">
+            交易港
           </text>
         </g>
       ))}
@@ -184,7 +184,16 @@ export default function BoardView({
           const color = playerColor(vertex.building.owner);
           const isCity = vertex.building.type === "city";
           return (
-            <g key={vertex.id}>
+            <g
+              key={vertex.id}
+              onClick={clickable ? () => onVertexClick?.(vertex.id) : undefined}
+              style={clickable ? { cursor: "pointer" } : undefined}
+            >
+              {clickable && (
+                <circle cx={vertex.x} cy={vertex.y} r={14} fill="#fff45c" opacity={0.55}>
+                  <animate attributeName="r" values="12;16;12" dur="1.2s" repeatCount="indefinite" />
+                </circle>
+              )}
               {isCity ? (
                 <rect x={vertex.x - 9} y={vertex.y - 9} width={18} height={18} fill={color} stroke="#1d2b36" strokeWidth={1.5} />
               ) : (
@@ -251,8 +260,13 @@ function computeBounds(board: Board) {
 }
 
 // 同じ港が2つの頂点に付与されるため、ラベルは中点に1つだけ表示する
-function uniquePortLabels(board: Board): { id: string; x: number; y: number; port: PortType }[] {
-  const seen = new Map<string, { id: string; x: number; y: number; port: PortType; count: number; sumX: number; sumY: number }>();
+function uniquePortLabels(
+  board: Board
+): { id: string; x: number; y: number; port: PortType; dock: [{ x: number; y: number }, { x: number; y: number }] }[] {
+  const seen = new Map<
+    string,
+    { id: string; x: number; y: number; port: PortType; dock: [{ x: number; y: number }, { x: number; y: number }] }
+  >();
   for (const vertex of board.vertices) {
     if (!vertex.port) continue;
     // 同じ港を共有する頂点同士はその辺で繋がっているはずなので、edge 単位でグループ化する
@@ -268,15 +282,16 @@ function uniquePortLabels(board: Board): { id: string; x: number; y: number; por
       const dirX = cx - 0;
       const dirY = cy - 0;
       const len = Math.hypot(dirX, dirY) || 1;
-      const offset = 26;
+      const offset = 30;
       seen.set(key, {
         id: key,
         x: cx + (dirX / len) * offset,
         y: cy + (dirY / len) * offset,
         port: vertex.port,
-        count: 1,
-        sumX: cx,
-        sumY: cy,
+        dock: [
+          { x: vertex.x, y: vertex.y },
+          { x: other.x, y: other.y },
+        ],
       });
     }
   }

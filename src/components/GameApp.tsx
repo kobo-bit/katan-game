@@ -3,6 +3,7 @@
 // ゲーム全体を統括するクライアントコンポーネント (セットアップ画面 + 対局画面)
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import BoardView from "./BoardView";
 import PlayerPanel from "./PlayerPanel";
 import GameLog from "./GameLog";
@@ -89,6 +90,7 @@ export default function GameApp() {
   const [robberPicker, setRobberPicker] = useState<{ hexId: string; candidates: PlayerId[] } | null>(null);
   const [tradeOpen, setTradeOpen] = useState(false);
   const [devCardDialog, setDevCardDialog] = useState<"yearOfPlenty" | "monopoly" | null>(null);
+  const [drawnCardNotice, setDrawnCardNotice] = useState<DevCardType | null>(null);
 
   function dispatch(action: GameAction): ActionResult | null {
     if (!state) return null;
@@ -96,6 +98,12 @@ export default function GameApp() {
     if (result.ok) {
       setState(result.state);
       setErrorMessage(null);
+      if (action.type === "BUY_DEV_CARD") {
+        const buyer = getPlayer(result.state, action.playerId);
+        if (buyer.kind === "human") {
+          setDrawnCardNotice(buyer.devCards[buyer.devCards.length - 1] ?? null);
+        }
+      }
     } else {
       setErrorMessage(result.message ?? "その操作はできません。");
     }
@@ -218,13 +226,6 @@ export default function GameApp() {
   }
 
   const human = actingPlayer?.kind === "human" ? actingPlayer : null;
-  const playableDevCards: DevCardType[] = human
-    ? (["knight", "roadBuilding", "yearOfPlenty", "monopoly"] as DevCardType[]).filter((type) => {
-        const total = human.devCards.filter((c) => c === type).length;
-        const fresh = human.newDevCards.filter((c) => c === type).length;
-        return total > fresh;
-      })
-    : [];
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-4 p-4 lg:flex-row">
@@ -257,6 +258,21 @@ export default function GameApp() {
 
         {errorMessage && (
           <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">{errorMessage}</div>
+        )}
+
+        {drawnCardNotice && (
+          <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <span>
+              発展カード「{DEV_CARD_LABEL[drawnCardNotice]}」を引きました!
+              {drawnCardNotice !== "victoryPoint" && " (このターンはまだプレイできません)"}
+            </span>
+            <button
+              className="ml-3 rounded border border-amber-400 px-2 py-0.5 text-xs hover:bg-amber-100"
+              onClick={() => setDrawnCardNotice(null)}
+            >
+              閉じる
+            </button>
+          </div>
         )}
 
         {state.phase === "gameOver" && state.winner && (
@@ -347,26 +363,38 @@ export default function GameApp() {
               銀行・港と交易する
             </button>
 
-            {playableDevCards.length > 0 && (
+            {human.devCards.length > 0 && (
               <>
                 <hr className="my-1 border-slate-200" />
-                <p className="font-semibold text-slate-700">発展カードをプレイ</p>
+                <p className="font-semibold text-slate-700">あなたの発展カード ({human.devCards.length} 枚)</p>
                 <div className="flex flex-col gap-1">
-                  {playableDevCards.map((type) => (
-                    <button
-                      key={type}
-                      className="rounded border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 disabled:opacity-40"
-                      disabled={state.devCardPlayedThisTurn}
-                      onClick={() => {
-                        if (type === "knight") dispatch({ type: "PLAY_KNIGHT", playerId: human.id });
-                        else if (type === "roadBuilding") dispatch({ type: "PLAY_ROAD_BUILDING", playerId: human.id });
-                        else if (type === "yearOfPlenty") setDevCardDialog("yearOfPlenty");
-                        else if (type === "monopoly") setDevCardDialog("monopoly");
-                      }}
-                    >
-                      {DEV_CARD_LABEL[type]} を使う
-                    </button>
-                  ))}
+                  {(Object.keys(DEV_CARD_LABEL) as DevCardType[])
+                    .filter((type) => human.devCards.includes(type))
+                    .map((type) => {
+                      const total = human.devCards.filter((c) => c === type).length;
+                      const fresh = human.newDevCards.filter((c) => c === type).length;
+                      const playable = type !== "victoryPoint" && total > fresh && !state.devCardPlayedThisTurn;
+                      return (
+                        <button
+                          key={type}
+                          className="flex items-center justify-between rounded border border-slate-300 px-3 py-2 text-left text-sm hover:bg-slate-100 disabled:cursor-default disabled:opacity-60"
+                          disabled={!playable}
+                          onClick={() => {
+                            if (!playable) return;
+                            if (type === "knight") dispatch({ type: "PLAY_KNIGHT", playerId: human.id });
+                            else if (type === "roadBuilding") dispatch({ type: "PLAY_ROAD_BUILDING", playerId: human.id });
+                            else if (type === "yearOfPlenty") setDevCardDialog("yearOfPlenty");
+                            else if (type === "monopoly") setDevCardDialog("monopoly");
+                          }}
+                        >
+                          <span>
+                            {DEV_CARD_LABEL[type]} × {total}
+                            {fresh > 0 && <span className="ml-2 rounded bg-amber-200 px-1.5 py-0.5 text-xs text-amber-800">NEW (今すぐは使えません)</span>}
+                          </span>
+                          {playable && <span className="text-xs text-indigo-600">使う &gt;</span>}
+                        </button>
+                      );
+                    })}
                 </div>
               </>
             )}
@@ -539,6 +567,12 @@ function SetupScreen({
         >
           ゲーム開始
         </button>
+
+        <div className="mt-3 text-center">
+          <Link href="/stats" className="text-sm text-blue-600 hover:underline">
+            攻略情報 (CPU統計) を見る →
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-xl bg-white/70 p-4 text-xs text-slate-500">
